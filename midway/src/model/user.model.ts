@@ -1,4 +1,4 @@
-import "reflect-metadata";
+
 //import { InjectEntityModel } from '@midwayjs/orm';
 import db from "../dataSource";
 const waitDbInit=function(){

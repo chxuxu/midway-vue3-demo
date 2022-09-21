@@ -1,3 +1,4 @@
+import "reflect-metadata";
 const { DataSource } = require("typeorm");
 const UserEntity = require("./entity/user.entity");
 const dataSource = new DataSource({

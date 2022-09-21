@@ -1,6 +1,5 @@
 <template>
   <div class="home">
-    <LoginSetup/><a-date-picker/>
     <router-view></router-view>
   </div>
 </template>

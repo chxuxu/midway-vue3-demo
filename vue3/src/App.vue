@@ -9,8 +9,8 @@
     </template>
     <template v-slot:sider>
       <ul>
-        <li><router-link to="/actions">活动列表</router-link></li>
-        <li><router-link to="/actions/add">创建活动</router-link></li>
+        <li><router-link to="/actions">员工列表</router-link></li>
+        <li><router-link to="/actions/add">创建员工</router-link></li>
       </ul>
     </template>
 

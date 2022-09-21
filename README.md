@@ -54,11 +54,102 @@
 
 ## Web 框架选择
 使用命令行初始化工程时，需要选择框架类型，一般选择@midwayjs/koa,是Midway推荐也是默认的框架类型。可以获取更多的示例和帮助。
-
 ```
 $ npm init midway
 $ npm run dev
 ```
+## 控制器即路由
+像EGG这样的框架，路由和控制器还是分开的，midway将他们结合在一起控制器即路由，代码如下：
+```
+import { Controller, Get, Post } from '@midwayjs/decorator';
+@Controller('/')
+export class HomeController {
+
+  @Inject()
+  userService: UserService;
+
+  @Get('/')
+  @Get('/home')
+  async home() {
+    return 'Hello Midwayjs!';
+  }
+  @Post('/update')
+  async updateData() {
+    return 'This is a post method'
+  }
+
+  @Get('/getuser')
+  async getUser(@Query('id') uid) {
+    const user = await this.userService.getUser(uid);
+    return {success: true, message: 'OK', data: user};
+  }
+}
+```
+再看下JAVA代码：
+```
+/**
+ * 工单路由
+ */
+@Controller
+@PageCorpServiceCheck(needService = {CorpServiceCode.WORKSHEET_TOTAL})
+@RequestMapping(value = "/worksheet", produces = {"application/json;charset=UTF-8"})
+public class PageWorksheetController {
+    private Logger logger = LoggerFactory.getLogger(PageWorksheetController.class);
+
+    @Autowired
+    SettingFacade settingFacade;
+    @RequestMapping(value = {"/chat/wait/",
+            "/chat/",
+            "/chat/detail"})
+    @PageCorpServiceCheck(needService = {CorpServiceCode.WORKSHEET_TOTAL})
+    @PageStaffRightCheck(needRight = StaffRightCode.WORKSHEET)
+    public String getChatPage(Model model, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+      .....
+    }
+}
+
+```
+代码看起来是不是很像？
+同样有Controller装饰器，
+同样由主次路由路径 
+同样有服务注入
+
+## 服务和注入
+在业务中，只有控制器（Controller）的代码是不够的，一般来说会有一些业务逻辑被抽象到一个特定的逻辑单元中，我们一般称为服务（Service）。
+在EGG里，一般吧所有服务都放到一个目录下，不管某个控制器需要不需要，都塞给它了。midway是需要的时候，注入对应的服务，也不用实例化操作。
+除了一个 @Provide 装饰器外，整个服务的结构和普通的 Class 一模一样，这样就行了。
+
+## Application 和 Context
+内容和EGG，KOA 差不多，但获取方式简单方便多了。
+```
+import { Inject,App, Controller, Get } from '@midwayjs/decorator';
+import { Context,Application } from '@midwayjs/koa';
+
+@Controller('/')
+export class HomeController {
+
+  @App()
+  app: Application;
+
+  @Inject()
+  ctx: Context;
+
+  @Get('/')
+  async home() {
+    // this.ctx.query
+  }
+}
+```
+## 扩展机制
+组件是 Midway 的扩展机制，可以将复用的业务代码，或者逻辑，抽象的公共的能力开发成组件，使得这些代码能够在所有的 Midway 场景下复用。
+## 中间件
+Web 中间件是在控制器调用 之前 和 之后（部分）调用的函数。 中间件函数可以访问请求和响应对象。做一些预处理货兜底工作。
+## 异常处理
+Midway 提供了一个内置的异常处理器，负责处理应用程序中所有未处理的异常。当您的应用程序代码抛出一个异常处理时，该处理器就会捕获该异常，然后等待用户处理。
+
+## 拦截器
+经常有全局统一处理逻辑的需求，比如统一处理错误，转换格式等等，虽然在 Web 场景有 Web 中间件来处理，但是在其他场景下，无法使用这个能力。
+Midway 设计了一套通用的方法拦截器（切面），用于在不同场景中，统一编写逻辑。比如全局的权限判断。
 
 # typeorm
 TypeORM 是一个ORM框架，它可以运行在 NodeJS、Browser、Cordova、PhoneGap、Ionic、React Native、Expo 和 Electron 平台上，可以与 TypeScript 和 JavaScript (ES5,ES6,ES7,ES8)一起使用。 它的目标是始终支持最新的 JavaScript 特性并提供额外的特性以帮助你开发任何使用数据库的（不管是只有几张表的小型应用还是拥有多数据库的大型企业应用）应用程序。
@@ -184,10 +275,107 @@ createConnection({
 
 # 综合实例-使用midway+typeorm搭建 WEB服务器
 
-## 数据层设计
-### 设计实体
+## 01-准备工作
+在midway应用基础上，安装以下包：
+```
+$ npm i @midwayjs/typeorm@3 typeorm mysql2 --save
+```
+在 src/configuration.ts 引入 orm 组件
+```
+import { Configuration } from '@midwayjs/decorator';
+import * as orm from '@midwayjs/typeorm';
+import { join } from 'path';
+@Configuration({
+  imports: [
+    // ...
+    orm                                                         // 加载 typeorm 组件
+  ],
+  importConfigs: [
+    join(__dirname, './config')
+  ]
+})
+export class MainConfiguration {
+}
+```
+## 02-配置数据库
+我们这里选择的是mysql
+在mysql里创建好数据库-testdb
+在src/config/config.default.ts 配置默认数据库链接
+```
+export default {
+  ...
+  typeorm: {
+    dataSource: {
+      default: {
+        /**
+         * 单数据库实例
+         */
+        type: 'mysql',
+        host: "127.0.0.1",
+        //port: 3306,
+        username: "root",
+        password: "********",
+        database: "testdb",
+        synchronize: false,     // 如果第一次使用，不存在表，有同步的需求可以写 true
+        logging: false,
+        // 配置实体模型
+        entities: [StaffEntity],
+      }
+    }
+  },
+} as MidwayConfig;
+```
+entities - 要加载并用于此连接的实体。接受要加载的实体类和目录路径。目录支持 glob 模式。示例：entities: [Post, Category, "entity/*.js", "modules/**/entity/*.js"]。了解有关entities的更多信息。
 
+## 03-数据层设计
+### 1.设计实体
+实体类编写相当于表结构设计，这比直接创建表结构方便，安全，后期还可以作为系统初始化时运行脚本的依赖。
+代码如下：
+```
+@Entity("tableName")
+export class StaffEntity {
+  @PrimaryGeneratedColumn({
+    type:'int',name:'id',comment:'自增ID'
+  })
+  id: number;
+  @Column('varchar',{name:'name',comment:'姓名',length:64})
+  name: string;
+  @Column('int',{name:'sex',comment:'性别'})
+  sex: number;
+  @Column('int',{name:'age',comment:'年龄'})
+  age: number;
+  @Column('varchar',{name:'email',comment:'邮箱',length:100})
+  email: string;
+}
+```
+@Entity 装饰器里的参数是表明，以上代码如果不传表名，最终表名为：staff_entity。
+实体类装饰器参数确定后，不能随意修改，否则执行SQL语句会找不到对应表名，一定要修改，也要同时修改表名。
+@Column 里面的 name值，表示字段名，也不能随意修改。
 
+### 2.设计模型
+此层也叫数据操作层-dal,一般是对数据库的颗粒化操作，业务简单的话会感觉多此一举，但是需要对不同表进行操作以完成一个复杂业务逻辑时，就体现出其价值。
+```
+@Provide()
+export class StaffModel {
+  @InjectEntityModel(StaffEntity)
+  staffRepository: Repository<StaffEntity>;
+  //初始化数据表，entities
+  async initTable() {
+    let manager=this.staffRepository.manager;
+    let conn=manager.connection;
+    const result = await conn.synchronize(false);//不删除已存在的表
+    console.log('initTable= ', result);
+    return result;
+  }
+
+  // save
+  async insert(staff:StaffEntity) {
+    const staffResult = await this.staffRepository.save(staff);
+    console.log('staff= ', staffResult);
+    return staffResult;
+  }
+}
+```
 
 # 参考：
 https://midwayjs.org/docs/quickstart
