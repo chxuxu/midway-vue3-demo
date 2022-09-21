@@ -118,6 +118,7 @@ public class PageWorksheetController {
 在业务中，只有控制器（Controller）的代码是不够的，一般来说会有一些业务逻辑被抽象到一个特定的逻辑单元中，我们一般称为服务（Service）。
 在EGG里，一般吧所有服务都放到一个目录下，不管某个控制器需要不需要，都塞给它了。midway是需要的时候，注入对应的服务，也不用实例化操作。
 除了一个 @Provide 装饰器外，整个服务的结构和普通的 Class 一模一样，这样就行了。
+用注入替代了 实例化。
 
 ## Application 和 Context
 内容和EGG，KOA 差不多，但获取方式简单方便多了。
@@ -327,8 +328,8 @@ export default {
 ```
 entities - 要加载并用于此连接的实体。接受要加载的实体类和目录路径。目录支持 glob 模式。示例：entities: [Post, Category, "entity/*.js", "modules/**/entity/*.js"]。了解有关entities的更多信息。
 
-## 03-数据层设计
-### 1.设计实体
+## 03-服务开发
+### 1.实体层
 实体类编写相当于表结构设计，这比直接创建表结构方便，安全，后期还可以作为系统初始化时运行脚本的依赖。
 代码如下：
 ```
@@ -352,7 +353,7 @@ export class StaffEntity {
 实体类装饰器参数确定后，不能随意修改，否则执行SQL语句会找不到对应表名，一定要修改，也要同时修改表名。
 @Column 里面的 name值，表示字段名，也不能随意修改。
 
-### 2.设计模型
+### 2.模型层
 此层也叫数据操作层-dal,一般是对数据库的颗粒化操作，业务简单的话会感觉多此一举，但是需要对不同表进行操作以完成一个复杂业务逻辑时，就体现出其价值。
 ```
 @Provide()
@@ -376,6 +377,118 @@ export class StaffModel {
   }
 }
 ```
+
+### 3.服务层
+此层用于处理业务逻辑，调用模型层的方法万层复杂的业务逻辑。供控制器层使用。
+```
+@Provide()
+export class StaffService {
+
+  @Inject()
+  staffModel: StaffModel;
+
+  async initTable() {
+    const result = this.staffModel.initTable();
+    return result;
+  }
+  async deleteStaff(id) {
+    const staffResult = this.staffModel.delete(id);
+    return staffResult;
+  }
+
+  async findStaff(pageNum,pageSize,params) {
+    const staffResult = this.staffModel.find(pageNum,pageSize,params);
+    return staffResult;
+  }
+}
+```
+以上代码实现了，增，查，删除操作。
+### 4.DTO
+Data Transfer Object（数据传输对象）DTO 是一组需要跨进程或网络边界传输的聚合数据的简单容器。
+它不应该包含业务逻辑，并将其行为限制为诸如内部一致性检查和基本验证之类的活动。
+在这里结合@midwayjs/validate用于对用户传递过来的参数进行兜底检查验证。
+```
+import { Rule, RuleType } from '@midwayjs/validate';
+export class InsertStaffDTO {
+  @Rule(RuleType.string().required())
+  name: string;
+
+  @Rule(RuleType.number().required().max(1).min(0))
+  sex: number;
+
+  @Rule(RuleType.number().required().max(100))
+  age: number;
+
+  @Rule(RuleType.string())
+  email:string;
+}
+```
+这个类属于一个 PlainObject ，也不需要被依赖注入管理，我们不需要提供 @Provide 装饰器。
+
+### 5.控制器和路由
+在src/controller目录下，增加一个文件，api.staff.controller.ts
+代码如下：
+```
+
+@Controller('/api/staff')
+export class APIController {
+  @Inject()
+  ctx: Context;
+
+  @Inject()
+  staffService: StaffService;
+
+  @Get('/initTable')
+  async initTable() {
+    const res = this.staffService.initTable();
+    return { code: 200, message: 'OK', result: res };
+  }
+
+  @Post('/insert')
+  @Validate()
+  async insertStaff(@Body() staffBody: InsertStaffDTO) {
+    let staff = new StaffEntity();
+    staff.name = staffBody.name;
+    staff.sex = staffBody.sex;
+    staff.age = staffBody.age;
+    staff.email =staffBody.email;
+    const user = await this.staffService.insertStaff(staff);
+    return {code: 200, message: 'OK', data: user };
+  }
+
+  @Get('/delete')
+  async deleteStaff(@Query() staffQuery) {
+    const result = await this.staffService.deleteStaff(+staffQuery.id);
+    return {code: 200, message: 'OK', data: result };
+  }
+  
+  @Get('/list')
+  async findStaff(@Query() staffQuery:IListParams) {
+    const result = await this.staffService.findStaff(+staffQuery.pageNum,+staffQuery.pageSize,{});
+    return {code: 200, message: 'OK', data: result };
+  }
+}
+```
+
+自此，我们就完成了以下接口的编写：
+/api/staff/initTable
+/api/staff/insert
+/api/staff/delete
+/api/staff/list
+
+## 在VUE3中使用接口
+...........................
+
+## 待优化
+- 利用midway提供的 中间件，过滤器，拦截器，优化代码架构，提高服务的强壮性。
+- 优化架构利用TS的强类型约定，前后台使用相同的类型，比如前端传参和后端接收参数都用同一个interface类型约定。
+- 权限认证
+
+## 后话
+-- 各种变成语言似乎在趋同发展，比如:
+ java,c#,ts 的泛型
+ angular2,vue3,react-router6 的路由设计(都使用了占位嵌入)
+ MVC路由设计都使用了装饰器和注入，比如java,midway,angular2(前端)
 
 # 参考：
 https://midwayjs.org/docs/quickstart
